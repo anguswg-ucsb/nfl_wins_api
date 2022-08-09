@@ -199,7 +199,7 @@ get_nfl_elo <- function(nfl_season) {
   home_rating <- 
     nfl_elo %>% 
     dplyr::group_by(team) %>% 
-    group_split()
+    dplyr::group_split()
   
   home_elo <- lapply(home_rating, FUN = function(x) {
       rate <- 
@@ -644,8 +644,4 @@ scrape_games <- function(year, pred_week) {
   return(matchups)
   
 }
-
-# make_prediction <-  function(model, year, pred_week) {
-#   
-# }
 

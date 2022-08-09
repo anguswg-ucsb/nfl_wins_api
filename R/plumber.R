@@ -1,5 +1,5 @@
-source("/app/nfl_win_api/R/utils.R", local = TRUE)
-source("/app/nfl_win_api/R/globals.R", local = TRUE)
+source("/app/nfl_wins_api/R/utils.R", local = FALSE)
+source("/app/nfl_wins_api/R/globals.R", local = FALSE)
 
 #* Retrieve data for desired week and generate predictions 
 #* @param year:number NFL season
