@@ -1,0 +1,651 @@
+#' @title Returns a dataframe w/ full NFL teams and team abbreviations
+#' @description Helper function used in other functions for matching full team names to abbreviated names
+#' @return tibble dataframe 
+nfl_teams <- function() {
+  team_df <- tibble::tibble(
+    team_name = c("Arizona Cardinals", "Atlanta Falcons" , "Baltimore Ravens",  "Buffalo Bills", 
+                  "Carolina Panthers", "Chicago Bears",  "Cincinnati Bengals" ,"Cleveland Browns",
+                  "Dallas Cowboys",  "Denver Broncos",  "Detroit Lions",  "Green Bay Packers", 
+                  "Houston Texans","Indianapolis Colts",  "Jacksonville Jaguars", "Kansas City Chiefs",   
+                  "Las Vegas Raiders",  "Oakland Raiders",  "Los Angeles Chargers", "San Diego Chargers", "Los Angeles Rams", "St. Louis Rams", 
+                  "Miami Dolphins", 
+                  "Minnesota Vikings",   "New England Patriots",  "New Orleans Saints", "New York Giants",         
+                  "New York Jets",       "Philadelphia Eagles",  "Pittsburgh Steelers",  "San Francisco 49ers", 
+                  "Seattle Seahawks", "Tampa Bay Buccaneers", "Tennessee Titans", "Washington Football Team", "Washington Redskins", "Washington Commanders"),
+    team_abb  = c("ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN", 
+                  "DET", "GB", "HOU", "IND", "JAX", "KC", "LV", "LV", "LAC", "LAC",  "LA", "LA",  "MIA", "MIN", "NE", "NO", 
+                  "NYG", "NYJ", "PHI", "PIT", "SF", "SEA", "TB", "TEN", "WAS","WAS", "WAS")
+  )
+  return(team_df)
+}
+
+#' @title Calculate win percentages
+#' @description Calculates overall, home, and away win percentages 
+#' @param df dataframe with home/away teams, week, and game outcome
+#' @param verbose logical, if TRUE, prints logger message. Default is TRUE
+#' @return dataframe 
+get_win_pct <- function(df, verbose = TRUE) { 
+  
+  # Enable log messages 
+  if(verbose == TRUE) {
+    logger::log_info("\n\nGenerating home/win totals and win % ...")
+  }
+  
+  sched <- 
+    df %>% 
+    tidyr::pivot_longer(
+      cols      = c(home_team, away_team),
+      names_to  = "home_away",
+      values_to = "team"
+    ) 
+  
+  # number of rest days between games
+  rest_df <- 
+    sched %>% 
+    dplyr::select(season, week, game_id,team, home_away, gameday) %>% 
+    dplyr::group_by(season, team) %>% 
+    dplyr::arrange(week, .by_group = T) %>% 
+    dplyr::mutate(
+      lag_gameday = lag(gameday), 
+      rest_days   = as.numeric(round(difftime(gameday, lag_gameday), 0))
+    ) %>% 
+    dplyr::select(season, week, game_id, team, rest_days) %>% 
+    replace(is.na(.), 7)
+  
+  
+  wins_df <- 
+    sched %>% 
+    dplyr::select(game_id, season, week, team, home_away, home_score, away_score) %>% 
+    dplyr::group_by(game_id, home_away) %>% 
+    dplyr::mutate(
+      win = case_when(
+        home_away == "home_team"  & home_score > away_score ~ 1,
+        home_away == "away_team" & away_score > home_score ~ 1,
+        away_score == home_score ~ 0,
+        TRUE ~ 0
+      )
+    ) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::group_by(team) %>% 
+    dplyr::arrange(week, .by_group = T) %>% 
+    dplyr::mutate(
+      games     = 1:n(), 
+      win_total = cumsum(win),
+      win_pct   = win_total/games
+    ) %>% 
+    dplyr::ungroup() 
+  
+  # Home game win pct %
+  home_games <-
+    wins_df %>% 
+    dplyr::filter(home_away == "home_team") %>% 
+    dplyr::group_by(season, team) %>% 
+    dplyr::arrange(week, .by_group = T) %>%
+    dplyr::mutate(
+      ngames         = 1:n(),
+      home_win_total = cumsum(win),
+      home_win_pct   = home_win_total/ngames
+      # home_win_pct = home_wins/ngames
+    )
+  
+  # Away game win pct %
+  away_games <-
+    wins_df %>% 
+    dplyr::filter(home_away == "away_team") %>% 
+    dplyr::group_by(season, team) %>% 
+    dplyr::arrange(week, .by_group = T) %>%
+    dplyr::mutate(
+      ngames         = 1:n(),
+      away_win_total = cumsum(win),
+      away_win_pct   = away_win_total/ngames
+    )
+  
+  # Final wins dataframe
+  wins <- 
+    home_games %>% 
+    dplyr::bind_rows(away_games) %>% 
+    dplyr::group_by(season, team) %>% 
+    dplyr::arrange(week, .by_group = T) %>% 
+    dplyr::mutate(
+      home_win_pct = zoo::na.locf(home_win_pct, na.rm = F), 
+      away_win_pct = zoo::na.locf(away_win_pct, na.rm = F)
+    ) %>% 
+    replace(is.na(.), 0) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(season, week, game_id, team, home_away, win, home_score, away_score,
+                  home_win = home_win_total, 
+                  away_win = away_win_total, 
+                  win_pct, home_win_pct,away_win_pct) %>% 
+    dplyr::mutate(across(where(is.numeric), round, 3)) %>% 
+    dplyr::left_join(
+      rest_df, 
+      by = c("season", "week", "team", "game_id")
+    ) %>% 
+    dplyr::relocate(season, week, game_id, team, home_away, rest_days) %>% 
+    dplyr::mutate(
+      split_game_id = substr(game_id, 9, 20)
+    ) %>% 
+    dplyr::ungroup()
+  
+  # Replace changed team names from game ID
+  wins$split_game_id <- gsub("OAK", "LV", wins$split_game_id)
+  wins$split_game_id <- gsub("SD", "LAC", wins$split_game_id)
+  wins$split_game_id <- gsub("STL", "LA", wins$split_game_id)
+  
+  wins$team <- gsub("OAK", "LV", wins$team)
+  wins$team <- gsub("SD", "LAC", wins$team)
+  wins$team <- gsub("STL", "LA", wins$team)
+  
+  wins <- 
+    wins %>% 
+    dplyr::mutate(
+      home_team     =  stringr::str_split_fixed(split_game_id, "_", 2)[,2],
+      away_team     =  stringr::str_split_fixed(split_game_id, "_", 2)[,1]
+    ) %>% 
+    dplyr::mutate(
+      opponent  = case_when(
+        home_team == team ~ away_team,
+        away_team == team ~ home_team
+      )
+    ) %>%
+    dplyr::select(-split_game_id, -home_team, -away_team) %>%
+    dplyr::relocate(season,week, game_id, team, opponent, home_away, rest_days) %>%
+    dplyr::filter(team != "")
+  
+  
+  return(wins)
+  
+}
+
+#' @title Calculate NFL Elo Ratings
+#' @description Calculates Elo ratings for an NFL season 
+#' @param nfl_season dataframe with home/away teams, week, home/away team scores, and game outcomes
+#' @return dataframe 
+get_nfl_elo <- function(nfl_season) {
+  
+  df <- 
+    nfl_season %>% 
+    dplyr::mutate(
+      wins_home = home_score > away_score
+    )
+  
+  nfl_er <- elo::elo.run(wins_home ~ team + opponent, data = df, k = 20) %>% 
+    as.data.frame() %>% 
+    dplyr::group_by(team.A) %>%
+    dplyr::mutate(
+      r_id = 1:n()
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      team_join = paste0(team.A, "_", team.B, "_", r_id)
+    )
+  
+  nfl_elo <- 
+    df %>%   
+    dplyr::group_by(team) %>% 
+    dplyr::mutate(
+      r_id = 1:n()
+    ) %>% 
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      team_join = paste0(team, "_", opponent, "_", r_id)
+    ) %>% 
+    dplyr::left_join(
+      dplyr::select(nfl_er, team_join, elo_team = elo.A, elo_opponent = elo.B),
+      by = "team_join"
+    ) %>% 
+    dplyr::select(-team_join, -home_score, -away_score, -wins_home, -r_id)
+  
+  home_rating <- 
+    nfl_elo %>% 
+    dplyr::group_by(team) %>% 
+    group_split()
+  
+  home_elo <- lapply(home_rating, FUN = function(x) {
+      rate <- 
+        x %>%
+        dplyr::select(season, week, game_id, win, team, elo = elo_team)
+    }) %>% 
+      dplyr::bind_rows()
+    
+  away_rating <- 
+    nfl_elo %>% 
+    dplyr::group_by(opponent) %>% 
+    dplyr::group_split()
+  
+  away_elo <- lapply(away_rating, FUN = function(x) {
+      rate <- 
+        x %>%
+        dplyr::select(season, week, game_id, win, team = opponent, elo = elo_opponent)
+    }) %>% 
+    dplyr::bind_rows()
+  
+  final_elo <- dplyr::bind_rows(home_elo, away_elo)
+  
+  return(final_elo)
+  
+}
+
+
+#' @title Scrape a week of NFL matchups for a given season from ESPN.com
+#' @description Calculates Elo ratings for an NFL season 
+#' @param year numeric for season of interest
+#' @param pred_week numeric for the week that we want to get the team matchups for
+#' @param post_season logical, if TRUE, function will retrieve post season matchups. Default is FALSE, still work in progress
+#' @return dataframe with the home and away teams for the desired week
+get_upcoming_game <- function(year, pred_week, post_season = FALSE) {
+
+  # if a  week greater than 17 is entered before 2021 season, pred_week = 17
+  if (year < 2021 & pred_week > 17) {
+  
+    pred_week <- 17
+    
+  } 
+  # If year before 2000 is entered, year = 2000
+  if (year < 2000) {
+    
+    year <- 2000
+    # return(message("Invalid year, enter a season between 2000 and the current season"))
+  }
+  
+  # If game is a post season game
+  if (post_season == TRUE) {
+    
+    url <- paste0("https://www.espn.com/nfl/schedule/_/week/", pred_week,"/year/", year, "/seasontype/3")
+    
+  } else {
+    
+    url <- paste0("https://www.espn.com/nfl/schedule/_/week/", pred_week,"/year/", year, "/seasontype/2")
+  }
+  
+  logger::log_info("\n\nRetrieving matchups:\nSeason: {year}\nWeek: {pred_week}")
+  
+  # Read HTML page using URL
+  page <- rvest::read_html(url)
+
+  # Extract HTML nodes for table
+  page_nodes <- 
+    page %>%  
+    rvest::html_nodes("table")
+  
+  # empty list to add to in loop
+  tbl_lst <- list()
+
+  for (i in 1:length(page_nodes)) {
+    
+    # logger::log_info("table {i} of {length(page_nodes)}")
+    
+    # Extract season games 
+    page_table <- rvest::html_table(
+      page_nodes[[i]],
+      header  = F,
+      fill    = T, 
+      convert = T
+    ) 
+    
+    # if a BYE week table, skip iteration
+    if (page_table[1, 1] == "BYE") {
+      
+      next
+      
+    } else {
+
+      page_table <- 
+        page_table %>% 
+        dplyr::select(X1, X2) %>% 
+        dplyr::filter(X1 != "matchup") %>% 
+        stats::setNames(c("away_team", "home_team")) %>% 
+        dplyr::mutate(
+          id = 1:n()
+        ) %>% 
+        dplyr::group_by(id) %>% 
+        dplyr::mutate(
+          season    = year,
+          week      = pred_week,
+          away_team = tail(strsplit(away_team, split = " ")[[1]], 1),
+          home_team = tail(strsplit(home_team, split = " ")[[1]], 1),
+          home_team = dplyr::case_when(
+            grepl("LAR", home_team) ~ "LA",
+            grepl("WSH", home_team) ~ "WAS",
+            TRUE                    ~ home_team
+          ),
+          away_team = dplyr::case_when(
+            grepl("LAR", away_team) ~ "LA",
+            grepl("WSH", away_team) ~ "WAS",
+            TRUE                    ~ away_team
+          ),
+          game_id   = dplyr::case_when(
+            week < 10 ~ paste0(year, "_0", week, "_", away_team, "_",  home_team),
+            week >= 10 ~ paste0(year, "_", week, "_", away_team, "_",  home_team)
+          )
+        ) %>% 
+        dplyr::ungroup() %>% 
+        dplyr::select(season, week, game_id, home_team, away_team)
+      
+      
+      tbl_lst[[i]] <- page_table
+    }
+  }
+  
+  # Bind rows of list
+  upcoming_games <- dplyr::bind_rows(tbl_lst)
+  
+  # Replace some team names to match names in  other data
+  # upcoming_games$home_team <- gsub("LAR", "LA", upcoming_games$home_team)
+  # upcoming_games$away_team <- gsub("LAR", "LA", upcoming_games$away_team)
+  # upcoming_games$home_team <- gsub("WSH", "WAS", upcoming_games$home_team)
+  # upcoming_games$away_team <- gsub("WSH", "WAS", upcoming_games$away_team)
+  
+  return(upcoming_games)
+  
+}
+
+#' @title Scrape data needed to make a prediction for a given week
+#' @description Retrieves the necessary model input data from Profootballreference.com and returns a dataframe that can be inputted into models
+#' @param year numeric for season of interest
+#' @param pred_week numeric for the week that we want to get the team matchups for
+#' @return dataframe with necessary model inputs
+scrape_games <- function(year, pred_week) {
+  
+  # Check and make sure pred_week is a valid week of season
+  if(pred_week < 2) {
+    
+    # setting week to 2 if pred_week is less than 2
+    logger::log_info("\n\nWeek {pred_week} invalid\nWeek must be within valid week range: 2 - upcoming week\nSetting pred_week = 2")
+    
+    pred_week = 2
+    
+  } else if(year >= 2021 & pred_week > 18) {
+    
+    # setting week to max week after 2020 season (18)
+    logger::log_info("\n\nWeek {pred_week} invalid\nWeek must be within valid week range: 2 - 18\nSetting pred_week = 18")
+    
+    pred_week = 18
+    
+  } else if(year < 2021 & pred_week > 17) {
+    
+    # setting week to max week before 2021 season (17)
+    logger::log_info("\n\nWeek {pred_week} invalid\nWeek must be within valid week range: 2 - 17\nSetting pred_week = 17")
+    
+    pred_week = 17
+    
+  }
+  # if(pred_week < 2) {
+  #   
+  #   logger::log_info("Please enter a week between week 2 and the Superbowl")
+  #   
+  #   pred_week = 2
+  #   
+  # } else if(year < 2021 & pred_week > 21) {
+  #   
+  #   logger::log_info("Please enter a week between 2-21")
+  #   
+  #   pred_week = 21
+  #   
+  # } else if(year >= 2021 & pred_week > 22) {
+  #   
+  #   logger::log_info("Please enter a week between 2-22")
+  #   
+  #   pred_week = 22
+  #   
+  # }
+  
+  # Construct URL
+  url  <- paste0("https://www.pro-football-reference.com/years/", year ,"/games.htm")
+  
+  # Read HTML page using URL
+  page <- rvest::read_html(url)
+  
+  # Extract HTML nodes for table
+  page_nodes <- 
+    page %>%  
+    rvest::html_nodes("table")
+  
+  
+  # Extract season games 
+  page_table <- rvest::html_table(
+    page_nodes[[1]],
+    header  = T,
+    fill    = T, 
+    convert = F
+  ) %>% 
+    janitor::clean_names() %>% 
+    dplyr::mutate(
+      home = case_when(
+        x == ""  ~ 1,
+        x == "@" ~ 0,
+        x == "N" ~ 0
+      )
+    ) 
+  
+  # remove headers for each week
+  page_table <- page_table[!grepl("Week", page_table$week), ]
+  
+  # remove headers break for playoff start 
+  page_table <- page_table[!grepl("Playoffs", page_table$date), ]
+  
+  # Rename playoff columns as weeks, accounting for added game after 2020 season
+  if (year >= 2021) {
+    
+    # If season is after 2020
+    page_table <- 
+      page_table %>% 
+      dplyr::mutate(
+        week = dplyr::case_when(
+          week == "WildCard"  ~ "19",
+          week == "Division"  ~ "20",
+          week == "ConfChamp" ~ "21",
+          week == "SuperBowl" ~ "22",
+          TRUE                ~ week
+        ),
+        week     = as.numeric(week)
+      ) %>% 
+      dplyr::filter(week < pred_week)
+    
+    # Rename playoff columns as weeks, accounting for fewer games before 2021
+  } else {
+    
+    # if season is before 2021
+    page_table <- 
+      page_table %>% 
+      dplyr::mutate(
+        week = dplyr::case_when(
+          week == "WildCard"  ~ "18",
+          week == "Division"  ~ "19",
+          week == "ConfChamp" ~ "20",
+          week == "SuperBowl" ~ "21",
+          TRUE                ~ week
+        ),
+        week     = as.numeric(week)
+      ) %>% 
+      dplyr::filter(week < pred_week)
+  }
+  
+  # parse data tables from Pro Football Reference
+  outcomes <- 
+    page_table %>% 
+    dplyr::left_join(
+      dplyr::select(nfl_teams(), team_name, win_team_abb = team_abb),
+      by = c("winner_tie" = "team_name")
+    ) %>% 
+    dplyr::left_join(
+      dplyr::select(nfl_teams(), team_name, lose_team_abb = team_abb),
+      by = c("loser_tie" = "team_name")
+    ) %>% 
+    dplyr::select(week, date,
+                  win_team  = win_team_abb,
+                  x, 
+                  lose_team = lose_team_abb,
+                  pts_win   = pts,
+                  pts_lose  = pts_2, 
+                  tow, tol)  %>% 
+    dplyr::mutate(
+      home_team = dplyr::case_when(
+        x == ""  ~ win_team,
+        x == "@" ~ lose_team,
+        week == 22 ~ win_team
+      ),
+      away_team = dplyr::case_when(
+        x == ""  ~ lose_team,
+        x == "@" ~ win_team,
+        week == 22 ~ lose_team
+      ),
+      pts_win  = as.numeric(pts_win),
+      pts_lose = as.numeric(pts_lose),
+      game_id  = dplyr::case_when(
+        week < 10 ~ paste0(year, "_0", week, "_", away_team, "_",  home_team),
+        week >= 10 ~ paste0(year, "_", week, "_", away_team, "_",  home_team)
+      )
+    ) %>% 
+    dplyr::select(-x) %>% 
+    dplyr::group_by(game_id) %>% 
+    dplyr::mutate(
+      home_pts = dplyr::case_when(
+        home_team == win_team ~ max(pts_win, pts_lose),
+        home_team != win_team ~ min(pts_win, pts_lose)
+      ),
+      away_pts = dplyr::case_when(
+        home_team == win_team ~ min(pts_win, pts_lose),
+        home_team != win_team ~ max(pts_win, pts_lose)
+      ),
+      home_turnovers = dplyr::case_when(
+        home_team == win_team ~ tow,
+        home_team != win_team ~ tol
+      ),
+      away_turnovers = dplyr::case_when(
+        home_team == win_team ~ tol,
+        home_team != win_team ~ tow
+      ),
+      season = year
+    ) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(season, week, game_id, gameday = date, home_team, away_team,
+                  home_score = home_pts, away_score = away_pts,
+                  home_turnovers, away_turnovers) 
+  
+  # calculate win loss percentages
+  record <- get_win_pct(outcomes, verbose = FALSE)
+  
+  # Create Score differential, home or away team ID, # of rest days
+  outcomes <- 
+    outcomes %>% 
+    tidyr::pivot_longer(
+      cols      = c(home_team, away_team),
+      names_to  = "home",
+      values_to = "team"
+    ) %>% 
+    dplyr::mutate(
+      home = dplyr::case_when(
+        home == "home_team" ~ 1, 
+        home == "away_team" ~ 0
+      ),
+      score_diff = dplyr::case_when(
+        home == 1 ~ home_score - away_score, 
+        home == 0 ~ away_score - home_score
+      ),
+      home_away  = case_when(
+        home == 1 ~ "home_team",
+        home == 0 ~ "away_team"
+      )
+    ) %>% 
+    dplyr::mutate(
+      split_game_id = substr(game_id, 9, 20)
+    ) %>% 
+    dplyr::mutate(
+      home_team     =  stringr::str_split_fixed(split_game_id, "_", 2)[,2],
+      away_team     =  stringr::str_split_fixed(split_game_id, "_", 2)[,1],
+      opponent      =  dplyr::case_when(
+        home_team == team ~ away_team,
+        away_team == team ~ home_team
+      )
+    ) %>% 
+    dplyr::select(-split_game_id, -home_team, -away_team) %>% 
+    dplyr::group_by(team) %>% 
+    dplyr::arrange(gameday, .by_group = T) %>% 
+    dplyr::mutate(
+      lag_date    = lag(gameday), 
+      rest_days   = as.numeric(round(difftime(gameday, lag_date), 0))
+    ) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(-lag_date, -gameday, -home) %>% 
+    replace(is.na(.), 7) %>% 
+    dplyr::relocate(season, week, game_id, team, opponent, home_away, rest_days, score_diff, home_score, away_score) %>% 
+    dplyr::left_join(
+      dplyr::select(record, week, game_id, team, win, win_pct, home_win_pct, away_win_pct),
+      by = c("week", "game_id", "team")
+    )
+  
+  # Calculate ELO ratings
+  elo <-  
+    outcomes %>% 
+    dplyr::filter(home_away == "home_team") %>%
+    dplyr::select(season, week, game_id, team, opponent, win, home_score, away_score) %>% 
+    get_nfl_elo()
+  
+  # Join ELO ratings back w/ outcomes
+  outcomes <- 
+    outcomes %>% 
+    dplyr::left_join(
+      dplyr::select(elo, week, game_id, team, elo),
+      by = c("week", "game_id", "team")
+    ) %>%
+    dplyr::group_by(team) %>% 
+    dplyr::arrange(week, .by_group = TRUE) %>% 
+    dplyr::mutate(
+      turnovers = dplyr::case_when(
+        home_away == "home_team" ~ as.numeric(home_turnovers),
+        home_away == "away_team" ~ as.numeric(away_turnovers)
+      ),
+      turnovers    = mean(turnovers, na.rm = T),
+      score_diff   = mean(score_diff, na.rm = T)
+    ) %>% 
+    dplyr::slice(which.max(week)) %>% 
+    dplyr::select(season, week, game_id, team, opponent, home_away, win, win_pct,
+                  home_win_pct, away_win_pct, rest_days, score_diff, turnovers, elo)  %>% 
+    dplyr::mutate(across(c(win_pct:away_win_pct), round, 4)) %>% 
+    dplyr::ungroup()
+  
+  
+  # Get schedule of upcoming games
+  next_game <- get_upcoming_game(
+    year        = year,
+    pred_week   = pred_week,
+    post_season = FALSE
+  ) 
+  
+  # Upcoming home team stats
+  home <- 
+    next_game %>% 
+    dplyr::left_join(
+      dplyr::select(outcomes, -season, -week, -game_id, -opponent, -home_away, -win),
+      by = c("home_team" = "team")
+    ) 
+  
+  # Upcoming away team stats
+  away <-
+    outcomes %>% 
+    dplyr::filter(team %in% home$away_team) %>% 
+    dplyr::select(-season, -week, -game_id, -opponent, -home_away, -win) %>% 
+    stats::setNames(
+      c("away_team", 
+        paste0("opp_", names(.)[names(.) != "team"])
+      )
+    )
+  
+  # Join Home team and away team stats leading up to upcoming game, used as input into models
+  matchups <-
+    home %>% 
+    dplyr::left_join(
+      away,
+      by = c("away_team")
+    ) %>% 
+    dplyr::relocate(season, week, game_id, team = home_team, opponent = away_team)
+  
+  return(matchups)
+  
+}
+
+# make_prediction <-  function(model, year, pred_week) {
+#   
+# }
+

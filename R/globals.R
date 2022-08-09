@@ -1,0 +1,11 @@
+library(tidymodels)
+library(timetk)
+library(dplyr)
+library(elo)
+library(tidyr)
+library(rvest)
+library(xml2)
+library(httr)
+library(logger)
+
+win_model <- readRDS(here::here("R", "win_model_logistic_reg.rds"))
