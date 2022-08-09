@@ -23,7 +23,7 @@ WORKDIR /app/nfl_wins_api
 COPY . /app/nfl_wins_api
 
 # install packages
-RUN R -e "install.packages(pkgs=c('plumber', 'tibble', 'dplyr', 'elo', 'parnsip', 'glmnet', 'janitor', 'tune', 'tidyr', 'rvest', 'httr', 'logger'))"
+RUN R -e "install.packages(pkgs=c('plumber', 'tibble', 'dplyr', 'elo', 'parnsip', 'glmnet', 'janitor', 'stringr', 'zoo', 'tune', 'tidyr', 'rvest', 'httr', 'logger'))"
 
 # open port 15782 to traffic
 EXPOSE 8000
