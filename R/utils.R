@@ -234,7 +234,8 @@ get_nfl_elo <- function(nfl_season) {
 #' @param post_season logical, if TRUE, function will retrieve post season matchups. Default is FALSE, still work in progress
 #' @return dataframe with the home and away teams for the desired week
 get_upcoming_game <- function(year, pred_week, post_season = FALSE) {
-
+  # year = 2022
+  # pred_week =7
   # if a  week greater than 17 is entered before 2021 season, pred_week = 17
   if (year < 2021 & pred_week > 17) {
   
@@ -250,24 +251,28 @@ get_upcoming_game <- function(year, pred_week, post_season = FALSE) {
   
   # If game is a post season game
   if (post_season == TRUE) {
-    
-    url <- paste0("https://www.espn.com/nfl/schedule/_/week/", pred_week,"/year/", year, "/seasontype/3")
+    if (pred_week > 4) {
+      pred_week = 4
+    } 
+    url <- paste0("https://www.nfl.com/schedules/", year, "/POST", pred_week, "/")
+    # url <- paste0("https://www.espn.com/nfl/schedule/_/week/", pred_week,"/year/", year, "/seasontype/3")
     
   } else {
-    
-    url <- paste0("https://www.espn.com/nfl/schedule/_/week/", pred_week,"/year/", year, "/seasontype/2")
+    url <- paste0("https://www.cbssports.com/nfl/schedule/", year, "/regular/", pred_week, "/")
+    # url <- paste0("https://www.espn.com/nfl/schedule/_/week/", pred_week,"/year/", year, "/seasontype/2")
   }
   
   logger::log_info("\n\nRetrieving matchups:\nSeason: {year}\nWeek: {pred_week}")
+
   
   # Read HTML page using URL
   page <- rvest::read_html(url)
 
   # Extract HTML nodes for table
-  page_nodes <- 
-    page %>%  
+  page_nodes <-
+    page %>%
     rvest::html_nodes("table")
-  
+
   # empty list to add to in loop
   tbl_lst <- list()
 
@@ -283,49 +288,184 @@ get_upcoming_game <- function(year, pred_week, post_season = FALSE) {
       convert = T
     ) 
     
-    # if a BYE week table, skip iteration
-    if (page_table[1, 1] == "BYE") {
-      
-      next
-      
-    } else {
-
-      page_table <- 
-        page_table %>% 
-        dplyr::select(X1, X2) %>% 
-        dplyr::filter(X1 != "matchup") %>% 
-        stats::setNames(c("away_team", "home_team")) %>% 
-        dplyr::mutate(
-          id = 1:n()
+    # clean up table and get desired schedule for week
+    page_table <- 
+      page_table %>% 
+      dplyr::select(away_team = X1, home_team = X2) %>% 
+      dplyr::filter(!grepl("Away", away_team, ignore.case = TRUE)) %>% 
+      dplyr::mutate(
+        away_team = gsub("[[:punct:]]", "", away_team),
+        home_team = gsub("[[:punct:]]", "", home_team)
         ) %>% 
-        dplyr::group_by(id) %>% 
-        dplyr::mutate(
-          season    = year,
-          week      = pred_week,
-          away_team = tail(strsplit(away_team, split = " ")[[1]], 1),
-          home_team = tail(strsplit(home_team, split = " ")[[1]], 1),
-          home_team = dplyr::case_when(
-            grepl("LAR", home_team) ~ "LA",
-            grepl("WSH", home_team) ~ "WAS",
-            TRUE                    ~ home_team
+      dplyr::mutate(
+          away_abb = dplyr::case_when(
+            grepl(" ", away_team) ~ gsub("(*UCP)[^;-](?<!\\b\\p{L})", "", away_team, perl=TRUE),
+            TRUE ~ toupper(substr(away_team, 1, 3))
           ),
-          away_team = dplyr::case_when(
-            grepl("LAR", away_team) ~ "LA",
-            grepl("WSH", away_team) ~ "WAS",
-            TRUE                    ~ away_team
-          ),
-          game_id   = dplyr::case_when(
-            week < 10 ~ paste0(year, "_0", week, "_", away_team, "_",  home_team),
-            week >= 10 ~ paste0(year, "_", week, "_", away_team, "_",  home_team)
+          home_abb = dplyr::case_when(
+            grepl(" ", home_team) ~   gsub("(*UCP)[^;-](?<!\\b\\p{L})", "", home_team, perl=TRUE),
+            TRUE ~ toupper(substr(home_team, 1, 3))
           )
         ) %>% 
-        dplyr::ungroup() %>% 
-        dplyr::select(season, week, game_id, home_team, away_team)
-      
-      
-      tbl_lst[[i]] <- page_table
-    }
+      dplyr::mutate(
+        season    = year,
+        week      = pred_week,
+        away_team = dplyr::case_when(
+          away_abb == "LC"  ~ "LAC",
+          away_abb == "LR"  ~ "LA",
+          away_abb == "NJ"  ~ "NYJ",
+          away_abb == "NG"  ~ "NYG",
+          away_abb == "JAC" ~ "JAX",
+          TRUE              ~ away_abb
+        ),
+        home_team = dplyr::case_when(
+          home_abb == "LC"  ~ "LAC",
+          home_abb == "LR"  ~ "LA",
+          home_abb == "NJ"  ~ "NYJ",
+          home_abb == "NG"  ~ "NYG",
+          home_abb == "JAC" ~ "JAX",
+          TRUE              ~ home_abb
+        ),
+        game_id   = dplyr::case_when(
+          week < 10  ~ paste0(year, "_0", week, "_", away_team, "_",  home_team),
+          week >= 10 ~ paste0(year, "_", week, "_", away_team, "_",  home_team)
+        )
+      ) %>% 
+      dplyr::ungroup() %>% 
+      dplyr::select(season, week, game_id, home_team, away_team)
+    
+    tbl_lst[[i]] <- page_table
   }
+    # if a BYE week table, skip iteration
+    # if (page_table[1, 1] == "BYE") {
+    #   
+    #   next
+    #   
+    # } else {
+    #   page_table2 <- 
+    #     page_table %>% 
+    #     dplyr::select(X1, X2, X3) %>% 
+    #     dplyr::filter(!grepl("matchup", X1, ignore.case = TRUE)) %>% 
+    #     stats::setNames(c("away_team", "home_team", "result")) %>% 
+    #     dplyr::mutate(
+    #       id = 1:n()
+    #     ) %>% 
+    #     dplyr::group_by(id) %>% 
+    #     dplyr::mutate(
+    #       home_team =  gsub("@ ", "", home_team)
+    #     ) %>% 
+    #     dplyr::mutate(
+    #       away_abb = dplyr::case_when(
+    #         grepl(" ", away_team) ~ gsub("(*UCP)[^;-](?<!\\b\\p{L})", "", away_team, perl=TRUE),
+    #         TRUE ~ toupper(substr(away_team, 1, 3))
+    #       ),
+    #       home_abb = dplyr::case_when(
+    #         grepl(" ", home_team) ~   gsub("(*UCP)[^;-](?<!\\b\\p{L})", "", home_team, perl=TRUE),
+    #         TRUE ~ toupper(substr(home_team, 1, 3))
+    #       )
+    #     ) %>% 
+    #     dplyr::mutate(
+    #       home_abb =  gsub(" ", "", home_abb),
+    #       away_abb =  gsub(" ", "", away_abb)
+    #       # home_abb = dplyr::case_when(
+    #       #   home_abb == " WA" ~ "WAS"
+    #       # )
+    #       )
+    # 
+    #   page_table2 <- 
+    #     page_table %>% 
+    #     dplyr::select(X1, X2, X3) %>% 
+    #     dplyr::filter(!grepl("matchup", X1, ignore.case = TRUE)) %>% 
+    #     stats::setNames(c("away_team", "home_team", "result")) %>% 
+    #     dplyr::mutate(
+    #       id = 1:n()
+    #     ) %>% 
+    #     dplyr::group_by(id) %>% 
+    #     dplyr::mutate(
+    #       home_team = gsub("@ ", "", home_team)
+    #     ) %>% 
+    #     dplyr::mutate(
+    #       team1 = tail(strsplit(
+    #         gsub("\\(OT\\)", "",
+    #              gsub('[[:digit:]]+', '', result)
+    #         ), ", "
+    #       )[[1]][1], 1),
+    #       team2 = head(strsplit(
+    #         gsub("\\(OT\\)", "",
+    #              gsub('[[:digit:]]+', '', result)
+    #         ), ", "
+    #       )[[1]][2], 1)
+    #     ) %>% 
+    #     dplyr::mutate(
+    #       dist  = adist(home_team, team1), 
+    #       dist2 = adist(home_team, team2),
+    #       home_team1 = dplyr::case_when(
+    #         dist < dist2 ~ team1,
+    #         dist > dist2 ~ team2
+    #       ),
+    #       away_team1 = dplyr::case_when(
+    #         home_team1 == team1 ~ team2,
+    #         home_team1 == team2 ~ team1
+    #       )
+    #     ) %>% 
+    #     dplyr::mutate(
+    #       season    = year,
+    #       week      = pred_week,
+    #       home_team = dplyr::case_when(
+    #         grepl("LAR", home_team) ~ "LA",
+    #         grepl("WSH", home_team) ~ "WAS",
+    #         TRUE                    ~ home_team
+    #       ),
+    #       away_team = dplyr::case_when(
+    #         grepl("LAR", away_team) ~ "LA",
+    #         grepl("WSH", away_team) ~ "WAS",
+    #         TRUE                    ~ away_team
+    #       ),
+    #       game_id   = dplyr::case_when(
+    #         week < 10 ~ paste0(year, "_0", week, "_", away_team, "_",  home_team),
+    #         week >= 10 ~ paste0(year, "_", week, "_", away_team, "_",  home_team)
+    #       )
+    #     ) %>% 
+    #     dplyr::ungroup() %>% 
+    #     dplyr::select(season, week, game_id, home_team, away_team)
+    #   
+    #   page_table3 <-
+    #     page_table %>%
+    #     dplyr::select(X1, X2) %>%
+    #     # dplyr::filter(X1 != "matchup") %>%
+    #     dplyr::filter(!grepl("matchup", X1, ignore.case = TRUE)) %>%
+    #     stats::setNames(c("away_team", "home_team")) %>%
+    #     dplyr::mutate(
+    #       id = 1:n()
+    #     ) %>%
+    #     dplyr::group_by(id) %>%
+    #     dplyr::mutate(
+    #       season    = year,
+    #       week      = pred_week,
+    #       away_team = tail(strsplit(away_team, split = " ")[[1]], 1),
+    #       home_team = tail(strsplit(home_team, split = " ")[[1]], 1),
+    #       home_team = dplyr::case_when(
+    #         grepl("LAR", home_team) ~ "LA",
+    #         grepl("WSH", home_team) ~ "WAS",
+    #         TRUE                    ~ home_team
+    #       ),
+    #       away_team = dplyr::case_when(
+    #         grepl("LAR", away_team) ~ "LA",
+    #         grepl("WSH", away_team) ~ "WAS",
+    #         TRUE                    ~ away_team
+    #       ),
+    #       game_id   = dplyr::case_when(
+    #         week < 10 ~ paste0(year, "_0", week, "_", away_team, "_",  home_team),
+    #         week >= 10 ~ paste0(year, "_", week, "_", away_team, "_",  home_team)
+    #       )
+    #     ) %>%
+    #     dplyr::ungroup() %>%
+    #     dplyr::select(season, week, game_id, home_team, away_team)
+    #   
+    #   
+    #   tbl_lst[[i]] <- page_table
+    # }
+  # }
   
   # Bind rows of list
   upcoming_games <- dplyr::bind_rows(tbl_lst)
