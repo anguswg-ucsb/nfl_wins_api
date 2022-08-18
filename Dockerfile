@@ -10,17 +10,23 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
   libsodium-dev \
   libxml2-dev
 
+# This ADD line purposely breaks the Docker cache after this point. That way 
+# everything gets recopied into the container every time
+# https://stackoverflow.com/a/55621942/591574
+# ADD https://google.com cache_bust
 # make directory
-RUN mkdir -p /app/nfl_wins_api
+RUN mkdir -p /app
 
 # Copy R files into directory
-COPY R /app/nfl_wins_api
+COPY /R /app
 
 # set working directory
-WORKDIR /app/nfl_wins_api
+WORKDIR /app
 
 # Copy R files into working directory
-COPY . /app/nfl_wins_api
+COPY . /app
+
+# RUN chmod -R 755 /app
 
 # install packages
 RUN R -e "install.packages(pkgs=c('plumber', 'tibble', 'dplyr', 'elo', 'parnsip', 'glmnet', 'janitor', 'stringr', 'zoo', 'tune', 'tidyr', 'rvest', 'httr', 'logger'))"
@@ -28,7 +34,4 @@ RUN R -e "install.packages(pkgs=c('plumber', 'tibble', 'dplyr', 'elo', 'parnsip'
 # open port 15782 to traffic
 EXPOSE 8000
 
-ENTRYPOINT ["R", "-e", "pr <- plumber::plumb(rev(commandArgs())[1]); args <- list(host = '0.0.0.0', port = 8000); if (packageVersion('plumber') >= '1.0.0') { pr$setDocs(TRUE) } else { args$swagger <- TRUE }; do.call(pr$run, args)"]
-
-# Run api.R script to run plumber API
-CMD ["/app/nfl_wins_api/R/api.R"]
+ENTRYPOINT ["R", "-e", "pr <- plumber::plumb('/app/R/api.R'); pr$run(host='0.0.0.0', port=8000)"]

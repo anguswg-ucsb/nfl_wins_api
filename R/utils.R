@@ -226,7 +226,6 @@ get_nfl_elo <- function(nfl_season) {
   
 }
 
-
 #' @title Scrape a week of NFL matchups for a given season from ESPN.com
 #' @description Calculates Elo ratings for an NFL season 
 #' @param year numeric for season of interest

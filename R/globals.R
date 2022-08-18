@@ -12,4 +12,4 @@ library(janitor)
 library(stringr)
 library(zoo)
 
-win_model <- readRDS("/app/nfl_wins_api/R/win_model_logistic_reg.rds")
+win_model <- readRDS("/app/R/win_model_logistic_reg.rds")
