@@ -55,9 +55,7 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
   current_date <- Sys.Date()
   
   if(is.null(year)) {
-    # new_date <- Sys.Date()
-    # new_date <- "2023-01-17"
-    
+
     # Current year
     year  <- as.numeric(substr(current_date, 1, 4))
     
@@ -95,10 +93,14 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
     
     # return(year)
     
-  # if year is before 2000, set year = 2000
-  } else if(year < 2000) {
+
+  } 
+  
+  # if year is before 2016, set year = 2016
+  if(year < 2016) {
     
-    year = 2000
+    year <-  2016
+    
     logger::log_info("Year entered was less than 2000 season, defaulting to {year} season")
   }
   
@@ -647,9 +649,201 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
   
 }
 # current_date = "2025-01-05"
-scrape_games(year = 2019, pred_week = 1)
+scrape_games(year = 2015, pred_week = 1)
 # **************************************************************************
 # **************************************************************************
+#' @title Scrape a week of NFL matchups for a given season from ESPN.com
+#' @description Calculates Elo ratings for an NFL season 
+#' @param year numeric for season of interest
+#' @param pred_week numeric for the week that we want to get the team matchups for
+#' @param post_season logical, if TRUE, function will retrieve post season matchups. Default is FALSE, still work in progress
+#' @return dataframe with the home and away teams for the desired week
+get_upcoming_game <- function(
+    year        = NULL,
+    pred_week   = NULL,
+    post_season = FALSE
+    ) {
+  
+  if(is.null(pred_week)) {
+    pred_week = 1
+  }
+  
+  current_date <- Sys.Date()
+  
+  if(is.null(year)) {
+    
+    # Current year
+    year  <- as.numeric(substr(current_date, 1, 4))
+    
+    # Current month
+    month <- as.numeric(substr(current_date, 6, 7))
+    
+    # If month is in part of season after Jan 1
+    if (month %in% c(1, 2, 3, 4)) {
+      
+      year <- year - 1
+      
+    }
+    
+    logger::log_info("No year entered, defaulting to current season - {year}")
+    
+  }
+  
+  # If the year is greater than the current season, make year = current_year
+  if(year > as.numeric(substr(current_date, 1, 4))) {
+    
+    # current year
+    year  <- as.numeric(substr(current_date, 1, 4))
+    
+    # current month
+    month <- as.numeric(substr(current_date, 6, 7))
+    
+    # If month is in part of season after Jan 1
+    if (month %in% c(1, 2, 3, 4)) {
+      
+      year <- year - 1
+      
+    }
+    logger::log_info("Year entered was greater than current season, defaulting to current season - {year}")
+    
+    # if year is before 2000, set year = 2000
+  } else if(year < 2016) {
+    
+    year <-  2016
+    
+    logger::log_info("Year entered was less than 2000 season, defaulting to {year} season")
+  }
+  
+  # Check and make sure pred_week is a valid week of season
+  if(pred_week < 1) {
+    
+    # setting week to 2 if pred_week is less than 2
+    logger::log_info("\n\nWeek {pred_week} invalid\nWeek must be within valid week range: 1 - upcoming week\nSetting pred_week = 2")
+    
+    pred_week <-  1
+    
+  } else if(year >= 2021 & pred_week > 18) {
+    
+    # setting week to max week after 2020 season (18)
+    logger::log_info("\n\nWeek {pred_week} invalid\nWeek must be within valid week range: 1 - 18\nSetting pred_week = 18")
+    
+    pred_week <-  18
+    
+  } else if(year < 2021 & pred_week > 17) {
+    
+    # setting week to max week before 2021 season (17)
+    logger::log_info("\n\nWeek {pred_week} invalid\nWeek must be within valid week range: 1 - 17\nSetting pred_week = 17")
+    
+    pred_week = 17
+    
+  }
+  
+  # if a  week greater than 17 is entered before 2021 season, pred_week = 17
+  if (year < 2021 & pred_week > 17) {
+    
+    pred_week <- 17
+    
+  } 
+  
+  # If game is a post season game
+  if (post_season == TRUE) {
+    if (pred_week > 4) {
+      pred_week = 4
+    } 
+    url <- paste0("https://www.nfl.com/schedules/", year, "/POST", pred_week, "/")
+
+  # Non postseason games
+  } else {
+    
+    url <- paste0("https://www.cbssports.com/nfl/schedule/", year, "/regular/", pred_week, "/")
+  
+  }
+  
+  logger::log_info("\n\nRetrieving matchups:\nSeason: {year}\nWeek: {pred_week}")
+  
+  
+  # Read HTML page using URL
+  page <- rvest::read_html(url)
+  
+  # Extract HTML nodes for table
+  page_nodes <-
+    page %>%
+    rvest::html_nodes("table")
+  
+  # empty list to add to in loop
+  tbl_lst <- list()
+  
+  for (i in 1:length(page_nodes)) {
+    
+    # logger::log_info("table {i} of {length(page_nodes)}")
+    
+    # Extract season games 
+    page_table <- rvest::html_table(
+      page_nodes[[i]],
+      header  = F,
+      fill    = T, 
+      convert = T
+    ) 
+    
+    # clean up table and get desired schedule for week
+    page_table <- 
+      page_table %>% 
+      dplyr::select(away_team = X1, home_team = X2) %>% 
+      dplyr::filter(!grepl("Away", away_team, ignore.case = TRUE)) %>% 
+      dplyr::mutate(
+        away_team = gsub("[[:punct:]]", "", away_team),
+        home_team = gsub("[[:punct:]]", "", home_team)
+      ) %>% 
+      dplyr::mutate(
+        away_abb = dplyr::case_when(
+          grepl(" ", away_team) ~ gsub("(*UCP)[^;-](?<!\\b\\p{L})", "", away_team, perl=TRUE),
+          TRUE ~ toupper(substr(away_team, 1, 3))
+        ),
+        home_abb = dplyr::case_when(
+          grepl(" ", home_team) ~   gsub("(*UCP)[^;-](?<!\\b\\p{L})", "", home_team, perl=TRUE),
+          TRUE ~ toupper(substr(home_team, 1, 3))
+        )
+      ) %>% 
+      dplyr::mutate(
+        season    = year,
+        week      = pred_week,
+        away_team = dplyr::case_when(
+          away_abb == "LC"  ~ "LAC",
+          away_abb == "LR"  ~ "LA",
+          away_abb == "NJ"  ~ "NYJ",
+          away_abb == "NG"  ~ "NYG",
+          away_abb == "JAC" ~ "JAX",
+          TRUE              ~ away_abb
+        ),
+        home_team = dplyr::case_when(
+          home_abb == "LC"  ~ "LAC",
+          home_abb == "LR"  ~ "LA",
+          home_abb == "NJ"  ~ "NYJ",
+          home_abb == "NG"  ~ "NYG",
+          home_abb == "JAC" ~ "JAX",
+          TRUE              ~ home_abb
+        ),
+        game_id   = dplyr::case_when(
+          week < 10  ~ paste0(year, "_0", week, "_", away_team, "_",  home_team),
+          week >= 10 ~ paste0(year, "_", week, "_", away_team, "_",  home_team)
+        )
+      ) %>% 
+      dplyr::ungroup() %>% 
+      dplyr::select(season, week, game_id, home_team, away_team)
+    
+    tbl_lst[[i]] <- page_table
+  }
+
+  
+  # Bind rows of list
+  upcoming_games <- dplyr::bind_rows(tbl_lst)
+  
+  return(upcoming_games)
+  
+}
+get_upcoming_game(year = 2021, pred_week = 4)
+# *******************************************************************************
+# *******************************************************************************
 
 year = NULL
 new_date <- "2022-11-17"
