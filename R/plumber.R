@@ -7,16 +7,19 @@ source("/app/R/globals.R", local = FALSE)
 #* @post /predict-new-data
 function(year, pred_week) {
 
+  # input data, convert to doubles
   given_data <- tibble::tibble(
     year      = as.double(year),
     pred_week = as.double(pred_week)
-  )
+  ) 
   
+  # New data from internet
   new_data <- scrape_games(
     year      = given_data$year[1],
     pred_week = given_data$pred_week[1]
   )
   
+  # generate predictions
   parsnip::augment(win_model, new_data) %>% 
     dplyr::select(
       season, week, game_id, 

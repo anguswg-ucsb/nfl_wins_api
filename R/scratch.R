@@ -2,8 +2,10 @@ library(httr)
 library(dplyr)
 library(jsonlite)
 library(logger)
-install.packages("cleaner")
+library(rvest)
+
 source("R/utils.R")
+
 # Hit API and return predictions 
 predict_games <- function(year, week, base_url = "http://68.183.25.9:8000/predict-new-data?") {
   
@@ -43,17 +45,23 @@ pred1 <- predict_games(
 
 # **************************************************************************
 # **************************************************************************
-# current_date <- "2020-01-05"
-year = 2020
-pred_week = 1
-scrape_games <- function(year = NULL, pred_week = NULL) {
+
+#' @title Scrape data needed to make a prediction for a given week
+#' @description Retrieves the necessary model input data from Profootballreference.com and returns a dataframe that can be inputted into models
+#' @param year numeric for season of interest
+#' @param pred_week numeric for the week that we want to get the team matchups for
+#' @return dataframe with necessary model inputs
+scrape_games2 <- function(year = NULL, pred_week = NULL) {
   
+  # if no input given for prediction week, set to predict for week 1 
   if(is.null(pred_week)) {
     pred_week = 1
   }
   
+  # current date when function is run in VM
   current_date <- Sys.Date()
   
+  # if no input year is given, set prediction year to current season  
   if(is.null(year)) {
 
     # Current year
@@ -71,10 +79,10 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
     
     logger::log_info("No year entered, defaulting to current season - {year}")
     
-    # return(year)
+    
   }
   
-  # If the year is greater than the current season, make year = current_year
+  # If input year is greater than the current season, set year to current_year
   if(year > as.numeric(substr(current_date, 1, 4))) {
     
     # current year
@@ -89,24 +97,18 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
       year <- year - 1
       
     }
+    
     logger::log_info("Year entered was greater than current season, defaulting to current season - {year}")
-    
-    # return(year)
-    
 
   } 
   
-  # if year is before 2016, set year = 2016
+  # if input year is before 2016, set year to 2016 (web scrape lookback limitation)
   if(year < 2016) {
     
     year <-  2016
     
     logger::log_info("Year entered was less than 2000 season, defaulting to {year} season")
   }
-  
-  logger::log_info("Return 3")
-  
-  # return(year)
   
   # Check and make sure pred_week is a valid week of season
   if(pred_week < 1) {
@@ -116,6 +118,7 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
     
     pred_week = 1
     
+    # Take account of added game after 2020 season 
   } else if(year >= 2021 & pred_week > 18) {
     
     # setting week to max week after 2020 season (18)
@@ -123,6 +126,7 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
     
     pred_week = 18
     
+    # Take account of fewer games before 2021 seasons
   } else if(year < 2021 & pred_week > 17) {
     
     # setting week to max week before 2021 season (17)
@@ -354,7 +358,7 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
       dplyr::ungroup()
     
     # Get schedule of upcoming games
-    next_game <- get_upcoming_game(
+    next_game <- get_matchups(
       year        = year,
       pred_week   = pred_week,
       post_season = FALSE
@@ -610,7 +614,7 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
     
     
     # Get schedule of upcoming games
-    next_game <- get_upcoming_game(
+    next_game <- get_matchups(
       year        = year,
       pred_week   = pred_week,
       post_season = FALSE
@@ -649,7 +653,8 @@ scrape_games <- function(year = NULL, pred_week = NULL) {
   
 }
 # current_date = "2025-01-05"
-scrape_games(year = 2015, pred_week = 1)
+scrape_games(year = 2018, pred_week = 1)
+scrape_games2(year = 2018, pred_week = 1)
 # **************************************************************************
 # **************************************************************************
 #' @title Scrape a week of NFL matchups for a given season from ESPN.com
@@ -658,7 +663,7 @@ scrape_games(year = 2015, pred_week = 1)
 #' @param pred_week numeric for the week that we want to get the team matchups for
 #' @param post_season logical, if TRUE, function will retrieve post season matchups. Default is FALSE, still work in progress
 #' @return dataframe with the home and away teams for the desired week
-get_upcoming_game <- function(
+get_matchups <- function(
     year        = NULL,
     pred_week   = NULL,
     post_season = FALSE
@@ -841,69 +846,161 @@ get_upcoming_game <- function(
   return(upcoming_games)
   
 }
-get_upcoming_game(year = 2021, pred_week = 4)
+get_matchups(year = 2014, pred_week = 4)
 # *******************************************************************************
 # *******************************************************************************
 
 year = NULL
 new_date <- "2022-11-17"
-get_week <- function(year = NULL, pred_week, post_season = FALSE) {
-  if(is.null(year)) {
-    # new_date <- Sys.Date()
-    # new_date <- "2023-01-17"
-    
-    # Current year
-    year  <- as.numeric(substr(Sys.Date(), 1, 4))
-    
-    # Current month
-    month <- as.numeric(substr(Sys.Date(), 6, 7))
-    
-    # If month is in part of season after Jan 1
-    if (month %in% c(1, 2, 3, 4)) {
-      
-      year <- year - 1
-      
-    }
-    
-    logger::log_info("Return 1")
-    
-  return(year)
-  }
-  
-  # If the year is greater than the current season, make year = current_year
-  if(year > as.numeric(substr(Sys.Date(), 1, 4))) {
-    
-    # current year
-    year  <- as.numeric(substr(Sys.Date(), 1, 4))
-    
-    # current month
-    month <- as.numeric(substr(Sys.Date(), 6, 7))
-    
-    # If month is in part of season after Jan 1
-    if (month %in% c(1, 2, 3, 4)) {
-      
-      year <- year - 1
-      
-    }
-    logger::log_info("Return 2")
-    
-    return(year)
-    
-  }
-  
-  logger::log_info("Return 3")
-  
-  return(year)
-}
-# rm(new_date)
-get_week(year = NULL)
-#' @title Scrape a week of NFL matchups for a given season from ESPN.com
+# current_date <- "2022-10-01"
+current_date = "2020-11-10"
+rm(current_date)
+# **************************************************************************
+# **************************************************************************
+rm(current_date)
+#' @title Find the week of the NFL season according to a date
 #' @description Calculates Elo ratings for an NFL season 
-#' @param year numeric for season of interest
-#' @param pred_week numeric for the week that we want to get the team matchups for
-#' @param post_season logical, if TRUE, function will retrieve post season matchups. Default is FALSE, still work in progress
-#' @return dataframe with the home and away teams for the desired week
-get_week <- function(year = NULL, pred_week, post_season = FALSE) {
+#' @param current_date character string date, default is NULL and current_date will set to the date the function was run
+#' @return character string of the current week of the NFL season
+get_week <- function(current_date = NULL) {
+  
+  # if no current_date is entered, set to date function is run
+  if(is.null(current_date)) {
+    
+    current_date <- Sys.Date()
+    
+  }
+
+  # Current year
+  year  <- as.numeric(substr(current_date, 1, 4))
+  
+  # Current month
+  month <- as.numeric(substr(current_date, 6, 7))
+  
+  # If month is in part of season after Jan 1
+  if (month %in% c(1, 2, 3, 4)) {
+    
+    year     <- year - 1
+    
+  }
+  
+  # year function is run
+  sys_year <- as.numeric(substr(Sys.Date(), 1, 4))
+  
+  # Construct URL
+  url  <- paste0("https://www.pro-football-reference.com/years/", year ,"/games.htm")
+  
+  # Read HTML page using URL
+  page <- rvest::read_html(url)
+  
+  # Extract HTML nodes for table
+  page_nodes <- 
+    page %>%  
+    rvest::html_nodes("table")
+  
+  # Extract season games 
+  page_table <- rvest::html_table(
+    page_nodes[[1]],
+    header  = T,
+    fill    = T, 
+    convert = F
+  ) %>% 
+    janitor::clean_names() %>% 
+    dplyr::mutate(
+      home = case_when(
+        x == ""  ~ 1,
+        x == "@" ~ 0,
+        x == "N" ~ 0
+      )
+    ) %>% 
+    dplyr::select(1:3) %>% 
+    stats::setNames(c("week", "day", "datex"))
+  
+  # remove headers for each week
+  page_table <- page_table[!grepl("Week", page_table$week), ]
+  
+  # remove empty rows 
+  page_table <- page_table[!apply(page_table == "", 1, any),]
+  
+  # if year is less than current year, dates are correctly formatted, no need to parse dates
+  if(year < sys_year) {
+    
+    # remove headers for each week
+    page_table <- page_table[!grepl("Playoffs", page_table$week), ]
+  
+    # Create a clean date and min max of dates for each week of games
+    page_table <-
+      page_table %>% 
+      dplyr::group_by(week) %>% 
+      dplyr::mutate(
+        min_date = min(datex),
+        max_date = max(datex)
+      ) %>% 
+      dplyr::ungroup()
+    
+    # start and end of each NFL week, extract current week 
+    current_week <- 
+      page_table %>% 
+      dplyr::group_by(week, min_date, max_date) %>% 
+      dplyr::summarise() %>% 
+      dplyr::ungroup() %>% 
+      dplyr::mutate(
+        current_date  = current_date,
+        min_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(min_date))),
+        max_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(max_date))),
+        day_dist      = (min_day_dist + max_day_dist)/2
+      ) %>% 
+      dplyr::filter(day_dist == min(day_dist)) %>%  # dplyr::filter(current_date >= max_date) %>%
+      .$week
+    
+  } else {
+    
+    # Create a clean date and min max of dates for each week of games
+    page_table <-
+      page_table %>% 
+      dplyr::mutate(
+        year     = year, 
+        new_year = dplyr::case_when(
+          grepl("January|February|March", datex) ~ year + 1,
+          TRUE                                   ~ year
+        ),
+        date = as.Date(paste(datex, new_year), format='%b %d %Y')
+      ) %>% 
+      dplyr::group_by(week) %>% 
+      dplyr::mutate(
+        min_date = min(date),
+        max_date = max(date)
+      ) %>% 
+      dplyr::ungroup()
+    
+    # start and end of each NFL week, extract current week 
+    current_week <- 
+      page_table %>% 
+      dplyr::group_by(week, min_date, max_date) %>% 
+      dplyr::summarise() %>% 
+      dplyr::ungroup() %>% 
+      dplyr::mutate(
+        current_date  = current_date,
+        min_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(min_date))),
+        max_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(max_date))),
+        day_dist      = (min_day_dist + max_day_dist)/2
+      ) %>% 
+      dplyr::filter(day_dist == min(day_dist)) %>%   # dplyr::filter(current_date >= min_date, current_date <= max_date) %>% 
+      .$week
+  }
+  
+  # if week is outside week range, set to week 1 of the current season
+  if(length(current_week) == 0) {
+    
+    current_week = 1
+    
+  }
+  
+  return(current_week)
+  
+}
+
+
   year = NULL
   new_date <- "2022-01-17"
   if(is.null(year)) {
@@ -1046,4 +1143,3 @@ get_week <- function(year = NULL, pred_week, post_season = FALSE) {
       convert = T
     ) 
   }
-}
