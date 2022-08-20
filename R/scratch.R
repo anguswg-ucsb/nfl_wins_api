@@ -5,7 +5,9 @@ library(logger)
 library(rvest)
 
 source("R/utils.R")
-
+scrape_games(2022, 5)
+year = 2022 
+pred_week = 5
 # Hit API and return predictions 
 predict_games <- function(year, week, base_url = "http://68.183.25.9:8000/predict-new-data?") {
   
@@ -855,12 +857,43 @@ new_date <- "2022-11-17"
 # current_date <- "2022-10-01"
 current_date = "2020-11-10"
 rm(current_date)
-# **************************************************************************
-# **************************************************************************
-rm(current_date)
+
+# *********************************************************************
+# *********************************************************************
+
+#' @title Find the numeric year of the NFL season year for a given date
+#' @description Returns numeric season year for a given date 
+#' @param date character string date, default is NULL and date will set to the date the function was run
+#' @return numeric indicating the season year
+get_year <- function(date = NULL) {
+  
+  if(is.null(date)) {
+    
+    # current date when function is run in VM
+    date <- Sys.Date()
+    
+  }
+  
+  # Current year
+  year  <- as.numeric(substr(date, 1, 4))
+  
+  # Current month
+  month <- as.numeric(substr(date, 6, 7))
+  
+  # If month is in part of season after Jan 1
+  if (month %in% c(1, 2, 3, 4)) {
+    
+    year <- year - 1
+  }
+  
+  return(year)
+}
+
+current_date <- "2019-09-30"
+
 #' @title Find the week of the NFL season according to a date
 #' @description Calculates Elo ratings for an NFL season 
-#' @param current_date character string date, default is NULL and current_date will set to the date the function was run
+#' @param current_date character date, YYYY-MM-DD. Default is NULL and current_date will set to the date the function was run
 #' @return character string of the current week of the NFL season
 get_week <- function(current_date = NULL) {
   
@@ -870,7 +903,7 @@ get_week <- function(current_date = NULL) {
     current_date <- Sys.Date()
     
   }
-
+  
   # Current year
   year  <- as.numeric(substr(current_date, 1, 4))
   
@@ -885,7 +918,7 @@ get_week <- function(current_date = NULL) {
   }
   
   # year function is run
-  sys_year <- as.numeric(substr(Sys.Date(), 1, 4))
+  sys_year <- get_year()
   
   # Construct URL
   url  <- paste0("https://www.pro-football-reference.com/years/", year ,"/games.htm")
@@ -914,7 +947,7 @@ get_week <- function(current_date = NULL) {
       )
     ) %>% 
     dplyr::select(1:3) %>% 
-    stats::setNames(c("week", "day", "datex"))
+    stats::setNames(c("week", "day", "datex")) 
   
   # remove headers for each week
   page_table <- page_table[!grepl("Week", page_table$week), ]
@@ -922,12 +955,16 @@ get_week <- function(current_date = NULL) {
   # remove empty rows 
   page_table <- page_table[!apply(page_table == "", 1, any),]
   
+  # page_table %>% 
+  #   dplyr::group_by(week) %>% 
+  #   dplyr::mutate(id = n())
+  #   dplyr::summarise()
   # if year is less than current year, dates are correctly formatted, no need to parse dates
   if(year < sys_year) {
     
     # remove headers for each week
     page_table <- page_table[!grepl("Playoffs", page_table$week), ]
-  
+    
     # Create a clean date and min max of dates for each week of games
     page_table <-
       page_table %>% 
@@ -944,14 +981,30 @@ get_week <- function(current_date = NULL) {
       dplyr::group_by(week, min_date, max_date) %>% 
       dplyr::summarise() %>% 
       dplyr::ungroup() %>% 
+      dplyr::arrange(min_date) %>% 
       dplyr::mutate(
-        current_date  = current_date,
-        min_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(min_date))),
-        max_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(max_date))),
-        day_dist      = (min_day_dist + max_day_dist)/2
+        week = 1:n()
       ) %>% 
-      dplyr::filter(day_dist == min(day_dist)) %>%  # dplyr::filter(current_date >= max_date) %>%
+      dplyr::mutate(
+        min_date      = as.Date(min_date),
+        max_date      = as.Date(max_date),
+        current_date  = current_date,
+        min_date      = lag(max_date) + 1,
+        min_date      = dplyr::case_when(
+          is.na(min_date) ~ max_date - 1,
+          TRUE            ~ min_date
+        )
+      ) %>% 
+      dplyr::filter(current_date >= min_date, current_date <= max_date) %>% 
       .$week
+    # dplyr::mutate(
+    #   current_date  = current_date,
+    #   min_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(min_date))),
+    #   max_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(max_date))),
+    #   day_dist      = (min_day_dist + max_day_dist)/2
+    # ) %>% 
+    # dplyr::filter(day_dist == min(day_dist)) %>%  # dplyr::filter(current_date >= max_date) %>%
+    # .$week
     
   } else {
     
@@ -975,31 +1028,54 @@ get_week <- function(current_date = NULL) {
     
     # start and end of each NFL week, extract current week 
     current_week <- 
-      page_table %>% 
+      page_table2 %>% 
       dplyr::group_by(week, min_date, max_date) %>% 
       dplyr::summarise() %>% 
       dplyr::ungroup() %>% 
+      dplyr::arrange(min_date) %>% 
       dplyr::mutate(
         current_date  = current_date,
-        min_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(min_date))),
-        max_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(max_date))),
-        day_dist      = (min_day_dist + max_day_dist)/2
+        min_date      = lag(max_date) + 1,
+        min_date      = dplyr::case_when(
+          is.na(min_date) ~ max_date - 1,
+          TRUE            ~ min_date
+        )
       ) %>% 
-      dplyr::filter(day_dist == min(day_dist)) %>%   # dplyr::filter(current_date >= min_date, current_date <= max_date) %>% 
+      dplyr::filter(current_date >= min_date, current_date <= max_date) %>% 
       .$week
+    # dplyr::mutate(
+    #   current_date  = current_date,
+    #   min_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(min_date))),
+    #   max_day_dist  = abs(as.numeric(lubridate::ymd(current_date) - lubridate::ymd(max_date))),
+    #   day_dist      = (min_day_dist + max_day_dist)/2
+    # ) %>% 
+    # dplyr::filter(day_dist == min(day_dist)) %>%   # dplyr::filter(current_date >= min_date, current_date <= max_date) %>% 
+    # .$week
   }
   
   # if week is outside week range, set to week 1 of the current season
   if(length(current_week) == 0) {
     
-    current_week = 1
+    current_week <- 1
     
   }
+  
+  # if current week returns a preseason week, set current_week = 1
+  if(grepl("Pre", current_week)) {
+    
+    current_week <- 1
+    
+  }
+  
+  # ensure week is a numeric
+  current_week <- as.numeric(current_week)
   
   return(current_week)
   
 }
 
+# *********************************************************************
+# *********************************************************************
 
   year = NULL
   new_date <- "2022-01-17"
