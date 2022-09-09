@@ -919,6 +919,15 @@ get_matchups <- function(
   
 }
 
+# Impute random number where NA
+impute <- function(x) {
+  avg   <- 3
+  stdev <- 1.5
+  indices    <- which(is.na(x))
+  x[indices] <- rnorm(length(indices), avg, stdev)
+  x
+}
+
 #' @title Scrape data needed to make a prediction for a given week
 #' @description Retrieves the necessary model input data from profootballreference.com and returns a dataframe that can be inputted into models
 #' @param year numeric for season of interest
@@ -971,8 +980,8 @@ scrape_games <- function(
   
   # if input year is before 2016, set year to 2016 (web scrape lookback limitation)
   if(year < 2016) {
-    
-    year <-  2016
+  
+    year <- 2016
     
     logger::log_info("Year entered was less than 2000 season, defaulting to {year} season")
   }
@@ -1223,7 +1232,7 @@ scrape_games <- function(
     
     # If prediction week is after week 1, use current seasons data
   } else {
-    
+
     # Construct URL
     url  <- paste0("https://www.pro-football-reference.com/years/", year ,"/games.htm")
     
@@ -1234,11 +1243,25 @@ scrape_games <- function(
     page_table <- process_page(
       page = page
       ) %>% 
-      dplyr::filter(week < pred_week)
-    
+      dplyr::filter(week < pred_week) %>% 
+      stats::setNames(c("week", "day", "date", "time", "winner_tie", "x", "loser_tie", "x_2",
+                 "pts", "pts_2", "yds_w", "tow", "yds_l", "tol", "home"))
+
+    # impute NA data for testing function will operate using future weeks of data 
+     # tmp <-
+     #   page_table %>%
+     #   dplyr::mutate(across(c(pts:tol), as.numeric)) %>%
+     #   dplyr::mutate(across(c(pts:tol), impute)) %>%
+     #   dplyr::mutate(
+     #     pts = dplyr::case_when(
+     #       pts <= pts_2 ~ pts_2 + 2,
+     #       TRUE ~ pts
+     #       )
+     #     )
+
     # parse data tables from Pro Football Reference
     outcomes <- 
-      page_table %>% 
+      page_table %>%
       dplyr::left_join(
         dplyr::select(nfl_teams(), team_name, win_team_abb = team_abb),
         by = c("winner_tie" = "team_name")

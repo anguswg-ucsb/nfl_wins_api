@@ -8,9 +8,21 @@ source("/app/R/globals.R", local = FALSE)
 #* Retrieve data for desired week and generate predictions 
 #* @param year:number year of the NFL season
 #* @param pred_week:number week of the NFL season to predict
+#* @param model Select a model to use. Either "log_reg" or "svm" to choose between a Logistic Regression model and a Linear Support Vector Machine, respectively. Default is "log_reg".
 #* @post /predict-new-data
-function(year, pred_week) {
+function(year, pred_week, model = "log_reg") {
 
+  # select between SVM model and Logisitic Regression model
+  if (model == "svm") {
+    
+    win_model = svm_model
+    
+  } else {
+    
+    win_model = logreg_model
+    
+  }
+  
   # input data, convert to doubles
   given_data <- tibble::tibble(
     year      = as.double(year),
@@ -27,8 +39,13 @@ function(year, pred_week) {
   parsnip::augment(win_model, new_data) %>% 
     dplyr::select(
       season, week, game_id, 
-      home_team = team,
-      away_team = opponent, 
-      .pred_class, .pred_1, .pred_0
+      home_team     = team,
+      away_team     = opponent, 
+      win           = .pred_class,
+      home_win_prob = .pred_1,
+      away_win_prob = .pred_0
       )
+
 }
+
+

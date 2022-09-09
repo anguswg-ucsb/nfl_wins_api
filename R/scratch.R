@@ -44,7 +44,18 @@ pred1 <- predict_games(
   year = 2022, 
   week = 7
 )
+sched2020 <- espnscrapeR::get_nfl_schedule(2020)
+sched2021 <- espnscrapeR::get_nfl_schedule(2021)
+sched <- dplyr::bind_rows(sched2020, sched2021)
+library(dplyr)
+tmp <- 
+  sched %>% 
+  dplyr::filter(season == 2020, type == 2) %>% 
+  dplyr::select(matchup, matchup_short, season, type, game_id, game_date,
+                home_team_abb, away_team_abb, home_win, away_win, home_score, home_record, away_record)
 
+glimpse(tmp)
+unique(sched2021$game_id) %in% unique(sched2020$game_id) 
 # **************************************************************************
 # **************************************************************************
 
