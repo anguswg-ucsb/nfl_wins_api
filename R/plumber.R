@@ -1,30 +1,17 @@
-source("/app/R/utils.R", local = FALSE)
 source("/app/R/globals.R", local = FALSE)
+source("/app/R/utils.R", local = FALSE)
 
 #* @apiTitle NFL Win Predictor
-
-#* @apiDescription This API returns NFL win predictions for a given week of the NFL season. The returned predictions are from the home team perspective (win = 1 means the home team is predicted to win). Predictions can be made for all regular season games between the 2016 season and the current season. The pred_week input indicates the week of the NFL season that predictions will be generated for. The underlying model is trained to make predictions for the upcoming week and not any further out. If a prediction week is entered that is greater than the upcoming week of the current NFL season, the API will default to make a prediction for the current week of games.<br><br>GitHub: https://github.com/anguswg-ucsb<br>LinkedIn: https://www.linkedin.com/in/angus-watters-0521a7209/<br>Email: anguswatters@gmail.com
+#* @apiDescription This API returns NFL win predictions for a given week of the NFL season. The returned predictions are from the home team perspective (win = 1 means the home team is predicted to win). Predictions can be made for all regular season games between the 2016 season and the current season. The prediction_week input indicates the week of the NFL season that predictions will be generated for. The underlying model is trained to make predictions for the upcoming week and not any further out. If a prediction week is entered that is greater than the upcoming week of the current NFL season, the API will default to make a prediction for the current week of games.<br><br>GitHub: https://github.com/anguswg-ucsb<br>LinkedIn: https://www.linkedin.com/in/angus-watters-0521a7209/<br>Email: anguswatters@gmail.com
 
 #* Retrieve data for desired week and generate predictions 
 #* @param year:number year of the NFL season
 #* @param pred_week:number week of the NFL season to predict
-#* @param model Select a model to use. Either "log_reg" or "svm" to choose between a Logistic Regression model and a Linear Support Vector Machine, respectively. Default is "log_reg".
 #* @post /predict-new-data
-function(year, pred_week, model = "log_reg") {
+function(year, pred_week) {
 
-  # select between SVM model and Logisitic Regression model
-  if (model == "svm") {
-    
-    win_model = svm_model
-    
-  } else {
-    
-    win_model = logreg_model
-    
-  }
-  
   # input data, convert to doubles
-  given_data <- tibble::tibble(
+  given_data <- data.frame(
     year      = as.double(year),
     pred_week = as.double(pred_week)
   ) 
@@ -34,9 +21,9 @@ function(year, pred_week, model = "log_reg") {
     year      = given_data$year[1],
     pred_week = given_data$pred_week[1]
   )
-  
+
   # generate predictions
-  parsnip::augment(win_model, new_data) %>% 
+  generics::augment(win_model, new_data) %>% 
     dplyr::select(
       season, week, game_id, 
       home_team     = team,

@@ -1,8 +1,8 @@
 #' @title Returns a dataframe w/ full NFL teams and team abbreviations
 #' @description Helper function used in other functions for matching full team names to abbreviated names
-#' @return tibble dataframe 
+#' @return dataframe 
 nfl_teams <- function() {
-  team_df <- tibble::tibble(
+  team_df <- data.frame(
     team_name = c("Arizona Cardinals", "Atlanta Falcons" , "Baltimore Ravens",  "Buffalo Bills", 
                   "Carolina Panthers", "Chicago Bears",  "Cincinnati Bengals" ,"Cleveland Browns",
                   "Dallas Cowboys",  "Denver Broncos",  "Detroit Lions",  "Green Bay Packers", 
@@ -25,7 +25,7 @@ nfl_teams <- function() {
 #' @param verbose logical, if TRUE, prints logger message. Default is TRUE
 #' @return dataframe 
 get_win_pct <- function(df, verbose = TRUE) { 
-  
+
   # Enable log messages 
   if(verbose == TRUE) {
     logger::log_info("\n\nGenerating home/win totals and win % ...")
@@ -46,7 +46,7 @@ get_win_pct <- function(df, verbose = TRUE) {
     dplyr::group_by(season, team) %>% 
     dplyr::arrange(week, .by_group = T) %>% 
     dplyr::mutate(
-      lag_gameday = lag(gameday), 
+      lag_gameday = dplyr::lag(gameday), 
       rest_days   = as.numeric(round(difftime(gameday, lag_gameday), 0))
     ) %>% 
     dplyr::select(season, week, game_id, team, rest_days) %>% 
@@ -85,7 +85,6 @@ get_win_pct <- function(df, verbose = TRUE) {
       ngames         = 1:n(),
       home_win_total = cumsum(win),
       home_win_pct   = home_win_total/ngames
-      # home_win_pct = home_wins/ngames
     )
   
   # Away game win pct %
@@ -101,22 +100,23 @@ get_win_pct <- function(df, verbose = TRUE) {
     )
   
   # Final wins dataframe
-  wins <- 
+  wins <-
     home_games %>% 
     dplyr::bind_rows(away_games) %>% 
     dplyr::group_by(season, team) %>% 
-    dplyr::arrange(week, .by_group = T) %>% 
-    dplyr::mutate(
-      home_win_pct = zoo::na.locf(home_win_pct, na.rm = F), 
-      away_win_pct = zoo::na.locf(away_win_pct, na.rm = F)
-    ) %>% 
+    dplyr::arrange(week, .by_group = T) %>%
+    tidyr::fill(home_win_pct, away_win_pct, .direction = "down") %>%
+    # dplyr::mutate(
+    #   home_win_pct = zoo::na.locf(home_win_pct, na.rm = F),
+    #   away_win_pct = zoo::na.locf(away_win_pct, na.rm = F)
+    # ) %>%
     replace(is.na(.), 0) %>% 
     dplyr::ungroup() %>% 
     dplyr::select(season, week, game_id, team, home_away, win, home_score, away_score,
                   home_win = home_win_total, 
                   away_win = away_win_total, 
                   win_pct, home_win_pct,away_win_pct) %>% 
-    dplyr::mutate(across(where(is.numeric), round, 3)) %>% 
+    dplyr::mutate(dplyr::across(where(is.numeric), round, 3)) %>% 
     dplyr::left_join(
       rest_df, 
       by = c("season", "week", "team", "game_id")
@@ -917,15 +917,6 @@ get_matchups <- function(
   
   return(upcoming_games)
   
-}
-
-# Impute random number where NA
-impute <- function(x) {
-  avg   <- 3
-  stdev <- 1.5
-  indices    <- which(is.na(x))
-  x[indices] <- rnorm(length(indices), avg, stdev)
-  x
 }
 
 #' @title Scrape data needed to make a prediction for a given week
