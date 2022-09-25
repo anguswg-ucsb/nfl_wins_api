@@ -15,7 +15,7 @@ function(year, pred_week) {
     year      = as.double(year),
     pred_week = as.double(pred_week)
   ) 
-  
+
   # New data from internet
   new_data <- scrape_games(
     year      = given_data$year[1],

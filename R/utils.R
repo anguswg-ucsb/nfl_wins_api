@@ -377,7 +377,8 @@ get_week <- function(current_date = NULL) {
           grepl("January|February|March", datex) ~ year + 1,
           TRUE                                   ~ year
         ),
-        date = as.Date(paste(datex, new_year), format='%b %d %Y')
+        date = as.Date(paste(datex, new_year), format='%Y-%m-%d')
+        # date = as.Date(paste(datex, new_year), format='%b %d %Y')
       ) %>% 
       dplyr::group_by(week) %>% 
       dplyr::mutate(

@@ -17,4 +17,3 @@ library(elo)
 
 # Trained Logistic Regression Model
 win_model <- readRDS("/app/R/win_model_logistic_reg.rds")
-
